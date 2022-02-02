@@ -23,7 +23,7 @@ TODO
 * ~~Fix focus()~~
 * ~~Refactor mousemotion()~~
 * Refactor layouts
-* Name change acktwm. mwm is the Motif WM.
+* ~~Name change acktwm. mwm is the Motif WM.~~
 
 
 ~~monsterwm~~ ~~mwm~~ acktwm

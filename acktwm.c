@@ -368,9 +368,25 @@ void clientmessage(XEvent *e) {
 
   if (e->xclient.message_type == netatoms[NET_WM_STATE] &&
         ((unsigned) e->xclient.data.l[1] == netatoms[NET_FULLSCREEN]
-          || (unsigned) e->xclient.data.l[2] == netatoms[NET_FULLSCREEN])) {
-    setfullscreen(c, m, (e->xclient.data.l[0] == 1 || (e->xclient.data.l[0] == 2 && !c->isfull)));
-  } else if (e->xclient.message_type == netatoms[NET_ACTIVE])
+          || (unsigned) e->xclient.data.l[2] == netatoms[NET_FULLSCREEN]))
+    //setfullscreen(c, m, (e->xclient.data.l[0] == 1 || (e->xclient.data.l[0] == 2 && !c->isfull)));
+    setfullscreen(c, m, e->xclient.data.l[0] == 1 || e->xclient.data.l[0] == 2);
+    /*
+  else if (e->xclient.message_type == netatoms[NET_WTYPE]) {
+    int i;
+    unsigned long l;
+    unsigned char *state = NULL;
+    Atom a;
+    Bool isnotif = False;
+    if (XGetWindowProperty(dpy, c->win, netatoms[NET_WTYPE], 0L, sizeof a, False, XA_ATOM, &a, &i, &l, &l, &state) == Success && state)
+      isnotif = (*(Atom *) state == netatoms[NET_NOTIF]) || (*(Atom *) state == netatoms[NET_UTIL]);
+
+    if (state)
+      XFree(state);
+
+    if (isnotif)
+      covercenter(c, m);
+  } */else if (e->xclient.message_type == netatoms[NET_ACTIVE])
       focus(c, d, m);
 }
 
@@ -683,6 +699,26 @@ void maprequest_window(Monitor *m, Desktop *d, Client *c, Window w, const XWindo
   c->w = wa->width;
   c->h = wa->height;
   
+  int i;
+  unsigned long l;
+  unsigned char *state = NULL;
+  Atom a;
+  if (XGetWindowProperty(dpy, c->win, netatoms[NET_WM_STATE], 0L, sizeof a, False, XA_ATOM, &a, &i, &l, &l, &state) == Success && state)
+    ;//setfullscreen(c, m, (*(Atom *) state == netatoms[NET_FULLSCREEN]));
+/*
+  Bool isnotif = False;
+  if (XGetWindowProperty(dpy, c->win, netatoms[NET_WTYPE], 0L, sizeof a, False, XA_ATOM, &a, &i, &l, &l, &state) == Success && state)
+    isnotif = (*(Atom *) state == netatoms[NET_NOTIF]) || (*(Atom *) state == netatoms[NET_UTIL]);
+*/
+  if (state)
+    XFree(state);
+
+  coverfree(c, d, m);
+  /*
+  if (isnotif)
+    covercenter(c, m);
+*/
+  clientname(c);
   if (m->currdeskidx == newdsk)
     XMapWindow(dpy, c->win);
   if (follow) { 
@@ -690,26 +726,6 @@ void maprequest_window(Monitor *m, Desktop *d, Client *c, Window w, const XWindo
     change_desktop(&(Arg) { .i = newdsk });
   }
 
-  int i;
-  unsigned long l;
-  unsigned char *state = NULL;
-  Atom a;
-  if (XGetWindowProperty(dpy, c->win, netatoms[NET_WM_STATE], 0L, sizeof a, False, XA_ATOM, &a, &i, &l, &l, &state) == Success && state)
-    setfullscreen(c, m, (*(Atom *) state == netatoms[NET_FULLSCREEN]));
-
-  Bool isnotif = False;
-  if (XGetWindowProperty(dpy, c->win, netatoms[NET_WTYPE], 0L, sizeof a, False, XA_ATOM, &a, &i, &l, &l, &state) == Success && state)
-    if (*(Atom *) state == netatoms[NET_NOTIF] || *(Atom *) state == netatoms[NET_UTIL])
-      isnotif = True;
-
-  if (state)
-    XFree(state);
-
-  coverfree(c, d, m);
-  if (isnotif)
-    covercenter(c, m);
-
-  clientname(c);
   focus(c, d, m);
 }
 
@@ -1021,9 +1037,9 @@ void setup(void) {
   netatoms[NET_ACTIVE]      = XInternAtom(dpy, "_NET_ACTIVE_WINDOW",       False);
   netatoms[NET_FULLSCREEN]  = XInternAtom(dpy, "_NET_WM_STATE_FULLSCREEN", False);
   netatoms[NET_WMNAME]      = XInternAtom(dpy, "_NET_WM_NAME", False);
-  netatoms[NET_WTYPE]       = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE", True);
-  netatoms[NET_NOTIF]       = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_NOTIFICATION", True);
-  netatoms[NET_UTIL]        = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_UTILITY", True);
+  netatoms[NET_WTYPE]       = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE", False);
+  netatoms[NET_NOTIF]       = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_NOTIFICATION", False);
+  netatoms[NET_UTIL]        = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_UTILITY", False);
   /* propagate EWMH support */
   XChangeProperty(dpy, root, netatoms[NET_SUPPORTED], XA_ATOM, 32, PropModeReplace, (unsigned char *) netatoms, NET_COUNT);
   XSetErrorHandler(xerrorstart);
@@ -1039,7 +1055,8 @@ void setup(void) {
   XQueryTree(dpy, root, &root_return, &parent_return, &children, &nchildren);
   for (unsigned int i = 0; i < nchildren; i++) {
     XWindowAttributes wa = { 0 };
-    XGetWindowAttributes(dpy, children[i], &wa);
+    if (XGetWindowAttributes(dpy, children[i], &wa) && wa.override_redirect)
+      continue;
     if (wa.map_state == IsViewable)
       maprequest_window(NULL, NULL, NULL, children[i], &wa);
   }
@@ -1214,10 +1231,10 @@ int main(int ARGC, char *ARGV[]) {
   if (!(dpy = XOpenDisplay(NULL)))
     errx(EXIT_FAILURE, "cannot open display");
   setup();
-  NOTIFY("WM init", 2, 1000);
+  NOTIFY("Ack Ack!", 2, 1000);
   run();
   cleanup();
-  NOTIFY("WM deinit", 2, 1000);
+  NOTIFY("Ack Ack!", 2, 1000);
   XCloseDisplay(dpy);
   return retval;
 }
@@ -1280,7 +1297,11 @@ void clientname(Client *c) {
 
 void coverfree(Client *c, Desktop *d, Monitor *m) {
   int x = 0, y = 0, minh = 0, ww = c->w, wh = c->h;
-  if (d->head->next) {
+  if (c->istrans) {
+    const Client *b = prevclient(c, d);
+    x = b->x + (b->w - c->w) / 2;
+    y = b->y + (b->h - c->h) / 2;
+  } else if (d->head->next) {
     Client *c = d->head;
     for (; c->next->next; c = c->next)
       minh = !minh || c->h < minh ? c->h : minh;
